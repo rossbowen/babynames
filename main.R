@@ -126,48 +126,50 @@ file_configs <- tribble(
 
 # Get processing parameters for a file
 # sheet_type can be "england", "wales", or "full"
-get_file_config <- function(filename, sheet_type) {
+get_file_configs <- function(filename, sheet_type) {
   # Extract year from filename
   year <- str_extract(filename, "\\d{4}") |> as.integer()
 
-  config <- file_configs |>
+  configs <- file_configs |>
     filter(str_detect(filename, pattern)) |>
-    filter(is.na(year) | year == !!year) |>
-    slice(1) # Take first match
+    filter(is.na(year) | year == !!year)
 
-  if (nrow(config) == 0) {
+  if (nrow(configs) == 0) {
     stop(glue("No configuration found for file: {filename}"))
   }
 
-  params <- list(
-    sheet = config$sheets[[1]][[sheet_type]],
-    skip_rows = case_when(
-      config$processing_type == "historic" ~ 3L,
-      year == 2021 ~ 6L,
-      config$processing_type == "modern" ~ 4L,
-      sheet_type == "full" & year >= 1996 & year <= 2020 ~ 4L,
-      year >= 2011 ~ 6L,
-      TRUE ~ 6L
-    ),
-    slice_first = case_when(
-      config$processing_type == "historic" ~ TRUE,
-      config$processing_type == "modern" ~ FALSE,
-      sheet_type == "full" & year >= 2012 & year <= 2020 ~ FALSE,
-      year == 2011 & config$sex == "Female" ~ FALSE,
-      TRUE ~ TRUE
-    ),
-    max_rows = if (config$processing_type == "historic") 101 else Inf
-  )
-
-  list(
-    year = year,
-    sex = config$sex,
-    sheet = params$sheet,
-    skip_rows = params$skip_rows,
-    slice_first = params$slice_first,
-    max_rows = params$max_rows,
-    processing_type = config$processing_type
-  )
+  result <- lapply(seq_len(nrow(configs)), function(i) {
+    config <- configs[i, ]
+    params <- list(
+      sheet = config$sheets[[1]][[sheet_type]],
+      skip_rows = case_when(
+        config$processing_type == "historic" ~ 3L,
+        year == 2021 ~ 6L,
+        config$processing_type == "modern" ~ 4L,
+        sheet_type == "full" & year >= 1996 & year <= 2020 ~ 4L,
+        year >= 2011 ~ 6L,
+        TRUE ~ 6L
+      ),
+      slice_first = case_when(
+        config$processing_type == "historic" ~ TRUE,
+        config$processing_type == "modern" ~ FALSE,
+        sheet_type == "full" & year >= 2012 & year <= 2020 ~ FALSE,
+        year == 2011 & config$sex == "Female" ~ FALSE,
+        TRUE ~ TRUE
+      ),
+      max_rows = if (config$processing_type == "historic") 101 else Inf
+    )
+    list(
+      year = year,
+      sex = config$sex,
+      sheet = params$sheet,
+      skip_rows = params$skip_rows,
+      slice_first = params$slice_first,
+      max_rows = params$max_rows,
+      processing_type = config$processing_type
+    )
+  })
+  result
 }
 
 
@@ -185,48 +187,56 @@ process_all_files <- function(
     tryCatch(
       {
         for (sheet_type in c("england", "wales", "full")) {
-          config <- get_file_config(filename, sheet_type)
-
-          # Skip if outside year range
-          if (config$year < start_year || config$year > end_year) {
-            next
-          }
-
-          # Skip england and wales for historic processing
-          if (config$processing_type == "historic" && sheet_type != "full") {
-            next
-          }
-
-          # Skip england and wales for 1996
-          if (config$year == 1996 && sheet_type != "full") {
-            next
-          }
-
-          message(glue(
-            "Processing {filename} | {config$year} | {config$sex} | {sheet_type} | {config$processing_type}"
-          ))
-
-          geography <- case_when(
-            sheet_type == "england" ~ ENGLAND,
-            sheet_type == "wales" ~ WALES,
-            sheet_type == "full" ~ ENGLAND_AND_WALES,
-            TRUE ~ ENGLAND_AND_WALES
+          configs <- tryCatch(
+            get_file_configs(filename, sheet_type),
+            error = function(e) NULL
           )
+          if (is.null(configs)) {
+            next
+          }
 
-          df <- process_baby_names_sheet(
-            file = file,
-            sheet = config$sheet,
-            skip_rows = config$skip_rows,
-            max_rows = config$max_rows,
-            slice_first = config$slice_first,
-            year = config$year,
-            sex = config$sex,
-            geography = geography,
-            processing_type = config$processing_type
-          )
+          for (config in configs) {
+            # Skip if outside year range
+            if (config$year < start_year || config$year > end_year) {
+              next
+            }
 
-          key <- glue("{config$year}_{config$sex}_{sheet_type}")
-          all_data[[key]] <- df
+            # Skip england and wales for historic processing
+            if (config$processing_type == "historic" && sheet_type != "full") {
+              next
+            }
+
+            # Skip england and wales for 1996
+            if (config$year == 1996 && sheet_type != "full") {
+              next
+            }
+
+            message(glue(
+              "Processing {filename} | {config$year} | {config$sex} | {sheet_type} | {config$processing_type}"
+            ))
+
+            geography <- case_when(
+              sheet_type == "england" ~ ENGLAND,
+              sheet_type == "wales" ~ WALES,
+              sheet_type == "full" ~ ENGLAND_AND_WALES,
+              TRUE ~ ENGLAND_AND_WALES
+            )
+
+            df <- process_baby_names_sheet(
+              file = file,
+              sheet = config$sheet,
+              skip_rows = config$skip_rows,
+              max_rows = config$max_rows,
+              slice_first = config$slice_first,
+              year = config$year,
+              sex = config$sex,
+              geography = geography,
+              processing_type = config$processing_type
+            )
+
+            key <- glue("{config$year}_{config$sex}_{sheet_type}")
+            all_data[[key]] <- df
+          }
         }
       },
       error = function(e) {
