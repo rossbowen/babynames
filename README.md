@@ -30,9 +30,14 @@ This repo fetches, cleans, and consolidates these into a tidy, long-format datas
 - [`download.R`](download.R) fetches the latest datasets from ONS into the `data-raw` directory
 - [`main.R`](main.R) processes these files, harmonising formats and combining them into a single dataset which is output to [`ons-baby-names-clean.csv`](ons-baby-names-clean.csv)
 
+You can query the dataset using the [DuckDB shell](https://shell.duckdb.org/#queries=v0,CREATE-TABLE-babynames-AS%0ASELECT-*-FROM-read_csv_auto('https%3A%2F%2Fraw.githubusercontent.com%2Frossbowen%2Fbabynames%2Frefs%2Fheads%2Fmain%2Fons%20baby%20names%20clean.csv')~,SELECT-*-FROM-babynames-LIMIT-10~) — click the link to explore with SQL in the browser.
+
+
 ---
 
 ## 📊 Sample output format
+
+The dataset includes rankings for each decade from 1904 to 1994 for England and Wales, followed by annual data from 1996 onwards for England, Wales, and England and Wales jointly. Each row represents a baby name at a specific time and geography, along with its rank and number of registrations (count).
 
 | year | sex    | geography   | geography_label     | rank | name    | count |
 |------|--------|-------------|---------------------|------|---------|--------|
